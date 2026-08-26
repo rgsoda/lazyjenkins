@@ -1,0 +1,50 @@
+version: 2
+
+project_name: lazyjenkins
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: lazyjenkins
+    main: .
+    binary: lazyjenkins
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+
+brews:
+  - name: lazyjenkins
+    repository:
+      owner: rgsoda
+      name: homebrew-lazyjenkins
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/rgsoda/lazyjenkins"
+    description: "Lazygit-style TUI for the jk Jenkins CLI"
+    license: "MIT"
+    install: |
+      bin.install "lazyjenkins"
+    test: |
+      assert_path_exists bin/"lazyjenkins"
