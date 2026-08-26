@@ -24,7 +24,7 @@ type runItem struct {
 }
 
 func (i runItem) FilterValue() string {
-	return fmt.Sprintf("%d %s %s", i.run.Number, i.run.Result, i.run.Branch)
+	return fmt.Sprintf("%d %s %s", i.run.Number, i.run.Result, runBranch(i.run))
 }
 
 func runResultLabel(r jenkins.Run) string {
@@ -34,10 +34,28 @@ func runResultLabel(r jenkins.Run) string {
 	return strings.ToUpper(r.Status)
 }
 
+// runBranch prefers the "gitBranch" build parameter (what a parameterized
+// deploy job actually deployed) over the run's own Branch field, which for
+// such jobs is just the Jenkinsfile's SCM checkout branch — usually a
+// constant like "origin/master" regardless of what was deployed.
+func runBranch(r jenkins.Run) string {
+	var params map[string]string
+	if r.Fields != nil {
+		params = r.Fields.Parameters
+	}
+	if b := params["gitBranch"]; b != "" {
+		if repo := params["gitRepo"]; repo != "" {
+			return repo + "@" + b
+		}
+		return b
+	}
+	return r.Branch
+}
+
 func runDescription(r jenkins.Run) string {
 	parts := []string{}
-	if r.Branch != "" {
-		parts = append(parts, r.Branch)
+	if b := runBranch(r); b != "" {
+		parts = append(parts, b)
 	}
 	if t, err := time.Parse(time.RFC3339, r.StartTime); err == nil {
 		parts = append(parts, humanAgo(t))

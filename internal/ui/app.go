@@ -75,6 +75,7 @@ type Model struct {
 	loadingJobs bool
 	loadingRuns bool
 	loadingLog  bool
+	busy        bool // a start/rerun/cancel/params fetch is in flight
 
 	status string
 	errStr string
@@ -153,7 +154,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case paramsLoadedMsg:
-		m.loadingLog = false
+		m.busy = false
 		m.status = ""
 		m.errStr = ""
 		if len(msg.params) == 0 {
@@ -168,6 +169,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case actionResultMsg:
+		m.busy = false
 		m.status = msg.label
 		m.errStr = ""
 		var cmds []tea.Cmd
@@ -178,7 +180,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case errMsg:
-		m.loadingJobs, m.loadingRuns, m.loadingLog = false, false, false
+		m.loadingJobs, m.loadingRuns, m.loadingLog, m.busy = false, false, false, false
 		m.errStr = fmt.Sprintf("[%s] %v", msg.scope, msg.err)
 		return m, nil
 
@@ -260,6 +262,9 @@ func (m *Model) layout() {
 	if m.leftWidth < 24 {
 		m.leftWidth = 24
 	}
+	if m.leftWidth > 35 {
+		m.leftWidth = 35
+	}
 	m.mainWidth = m.width - m.leftWidth - 1
 	m.bodyHeight = m.height - 2 // header + status bar
 
@@ -269,11 +274,11 @@ func (m *Model) layout() {
 	leftContentW := max(0, m.leftWidth-2)
 	mainContentW := max(0, m.mainWidth-2)
 
-	// -2 for the border, -1 more for the in-box title line.
-	m.jobs.SetSize(leftContentW, max(0, m.jobsHeight-3))
-	m.runs.SetSize(leftContentW, max(0, m.runsHeight-3))
+	// -2 for the border; the panel title lives in the border itself now.
+	m.jobs.SetSize(leftContentW, max(0, m.jobsHeight-2))
+	m.runs.SetSize(leftContentW, max(0, m.runsHeight-2))
 	m.log.Width = mainContentW
-	m.log.Height = max(0, m.bodyHeight-3)
+	m.log.Height = max(0, m.bodyHeight-2)
 }
 
 func max(a, b int) int {

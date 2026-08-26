@@ -1,6 +1,12 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+)
 
 // Palette loosely follows lazygit's default theme: green for the focused
 // panel, cyan-ish accents for selection, and semantic colors for build
@@ -21,28 +27,29 @@ var (
 	colorErrorText = lipgloss.Color("196")
 )
 
-func panelStyle(focused bool, width, height int) lipgloss.Style {
+// renderBoxedPanel draws a lazygit-style panel: the "[N] Title" label is
+// spliced directly into the top border rather than taking a content row.
+func renderBoxedPanel(focused bool, width, height, number int, title, content string) string {
 	c := colorBlurred
 	if focused {
 		c = colorFocused
 	}
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+	border := lipgloss.RoundedBorder()
+	borderStyle := lipgloss.NewStyle().Foreground(c)
+
+	prefix, suffix := fmt.Sprintf("─[%d] ", number), "─"
+	avail := max(0, width-lipgloss.Width(prefix)-lipgloss.Width(suffix))
+	head := prefix + ansi.Truncate(title, avail, ellipsis) + suffix
+	dashes := max(0, width-lipgloss.Width(head))
+	top := border.TopLeft + head + strings.Repeat(border.Top, dashes) + border.TopRight
+
+	box := lipgloss.NewStyle().
+		Border(border, false, true, true, true).
 		BorderForeground(c).
 		Width(width).
 		Height(height)
-}
 
-var panelTitleStyle = lipgloss.NewStyle().Bold(true)
-
-func panelTitle(focused bool, title string) string {
-	s := panelTitleStyle
-	if focused {
-		s = s.Foreground(colorFocused)
-	} else {
-		s = s.Foreground(colorSubtle)
-	}
-	return s.Render(title)
+	return borderStyle.Render(top) + "\n" + box.Render(content)
 }
 
 var (

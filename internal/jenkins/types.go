@@ -7,18 +7,27 @@ type Job struct {
 	Color string `json:"color"`
 }
 
-// Run is one entry from `jk run ls --json`.
+// Run is one entry from `jk run ls --json`. Branch/Commit reflect the SCM
+// checkout of the job's own Jenkinsfile, which for parameterized "deploy
+// anything" jobs is unrelated to what was actually deployed — that lives in
+// Fields.Parameters (e.g. a "gitBranch" build parameter) instead.
 type Run struct {
-	ID         string `json:"id"`
-	Number     int    `json:"number"`
-	Status     string `json:"status"`
-	Result     string `json:"result"`
-	DurationMs int64  `json:"durationMs"`
-	StartTime  string `json:"startTime"`
-	Branch     string `json:"branch"`
-	Commit     string `json:"commit"`
-	URL        string `json:"url"`
-	QueueID    int64  `json:"queueId"`
+	ID         string     `json:"id"`
+	Number     int        `json:"number"`
+	Status     string     `json:"status"`
+	Result     string     `json:"result"`
+	DurationMs int64      `json:"durationMs"`
+	StartTime  string     `json:"startTime"`
+	Branch     string     `json:"branch"`
+	Commit     string     `json:"commit"`
+	URL        string     `json:"url"`
+	QueueID    int64      `json:"queueId"`
+	Fields     *RunFields `json:"fields,omitempty"`
+}
+
+// RunFields holds the optional extra data requested via `--select`.
+type RunFields struct {
+	Parameters map[string]string `json:"parameters,omitempty"`
 }
 
 // RunList is the top-level shape of `jk run ls --json`.

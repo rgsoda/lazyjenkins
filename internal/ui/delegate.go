@@ -7,7 +7,10 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
+
+const ellipsis = "…"
 
 // rowDelegate renders jobItem/runItem rows directly, bypassing
 // list.DefaultDelegate so we can color status text without it being mangled
@@ -39,6 +42,10 @@ func (d rowDelegate) Render(w io.Writer, m list.Model, index int, item list.Item
 	default:
 		return
 	}
+
+	textWidth := max(0, m.Width()-2) // 2 for the cursor/indent column
+	title = ansi.Truncate(title, textWidth, ellipsis)
+	desc = ansi.Truncate(desc, textWidth, ellipsis)
 
 	indent := "  "
 	titleStyle := lipgloss.NewStyle()

@@ -94,6 +94,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		m.cycleFocus()
 		return m, nil
+	case "1":
+		if !m.typingInFilter() {
+			m.focus = focusJobs
+			return m, nil
+		}
+	case "2":
+		if !m.typingInFilter() {
+			m.focus = focusRuns
+			return m, nil
+		}
+	case "3":
+		if !m.typingInFilter() {
+			m.focus = focusMain
+			return m, nil
+		}
 	}
 
 	switch m.focus {
@@ -205,6 +220,7 @@ func (m Model) beginStart() (tea.Model, tea.Cmd) {
 	if m.selectedJob == "" {
 		return m, nil
 	}
+	m.busy = true
 	m.status = "loading parameters for " + m.selectedJob + "..."
 	return m, fetchParamsCmd(m.client, m.selectedJob)
 }
@@ -241,6 +257,7 @@ func (m Model) openLog(run jenkins.Run) (tea.Model, tea.Cmd) {
 func (m Model) runConfirmed() (tea.Model, tea.Cmd) {
 	kind := m.confirm
 	m.confirm = confirmNone
+	m.busy = true
 	switch kind {
 	case confirmStart:
 		params := m.confirmParams
@@ -256,5 +273,6 @@ func (m Model) runConfirmed() (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("cancelling %s #%d...", m.selectedJob, m.selectedRun.Number)
 		return m, cancelRunCmd(m.client, m.selectedJob, m.selectedRun.Number)
 	}
+	m.busy = false
 	return m, nil
 }

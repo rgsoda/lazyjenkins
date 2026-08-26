@@ -15,8 +15,17 @@ func (m Model) View() string {
 	}
 
 	header := m.headerView()
-	jobsPanel := m.renderPanel(focusJobs, "Jobs", m.leftWidth, m.jobsHeight, m.jobs.View())
-	runsPanel := m.renderPanel(focusRuns, m.runsTitle(), m.leftWidth, m.runsHeight, m.runs.View())
+
+	jobsContent := m.jobs.View()
+	if m.loadingJobs {
+		jobsContent = "  " + m.spinner.View() + " loading jobs..."
+	}
+	runsContent := m.runs.View()
+	if m.loadingRuns {
+		runsContent = "  " + m.spinner.View() + " loading runs..."
+	}
+	jobsPanel := m.renderPanel(focusJobs, "Jobs", m.leftWidth, m.jobsHeight, jobsContent)
+	runsPanel := m.renderPanel(focusRuns, m.runsTitle(), m.leftWidth, m.runsHeight, runsContent)
 	left := lipgloss.JoinVertical(lipgloss.Left, jobsPanel, runsPanel)
 
 	main := m.renderPanel(focusMain, m.mainTitle(), m.mainWidth, m.bodyHeight, m.mainContent())
@@ -26,9 +35,19 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, m.footerView())
 }
 
+func zoneNumber(zone focusZone) int {
+	switch zone {
+	case focusJobs:
+		return 1
+	case focusRuns:
+		return 2
+	default:
+		return 3
+	}
+}
+
 func (m Model) renderPanel(zone focusZone, title string, width, height int, content string) string {
-	box := panelStyle(m.focus == zone, max(0, width-2), max(0, height-2))
-	return box.Render(panelTitle(m.focus == zone, title) + "\n" + content)
+	return renderBoxedPanel(m.focus == zone, max(0, width-2), max(0, height-2), zoneNumber(zone), title, content)
 }
 
 func (m Model) runsTitle() string {
@@ -43,9 +62,9 @@ func (m Model) mainTitle() string {
 	case mainLog:
 		state := "done"
 		if m.following {
-			state = "following"
+			state = m.spinner.View() + " following"
 		}
-		return fmt.Sprintf("Log — %s #%d (%s)", m.logRunPath, m.logRunNumber, state)
+		return fmt.Sprintf("Log — %s #%d (%s, %d lines)", m.logRunPath, m.logRunNumber, state, len(m.logLines))
 	case mainParams:
 		return "Start Run"
 	default:
@@ -85,7 +104,7 @@ func (m Model) headerView() string {
 }
 
 func (m Model) footerView() string {
-	hints := "tab switch panel · ↑/k ↓/j move · / filter · r refresh · q quit"
+	hints := "1/2/3 · tab jump · ↑/k ↓/j move · / filter · r refresh · q quit"
 	switch m.focus {
 	case focusJobs:
 		hints = "enter open job · s start run · " + hints
@@ -100,6 +119,8 @@ func (m Model) footerView() string {
 	right := ""
 	if m.errStr != "" {
 		right = errorBarStyle.Render(m.errStr)
+	} else if m.busy {
+		right = statusBarStyle.Render(m.spinner.View() + " " + m.status)
 	} else if m.status != "" {
 		right = statusBarStyle.Render(m.status)
 	}

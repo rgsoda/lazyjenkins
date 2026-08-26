@@ -82,7 +82,7 @@ func (c *Client) JobLs(ctx context.Context, folder string) ([]Job, error) {
 }
 
 func (c *Client) RunLs(ctx context.Context, jobPath string, limit int) ([]Run, error) {
-	out, err := c.run(ctx, "run", "ls", jobPath, "--json", "--limit", fmt.Sprint(limit), "--include-queued")
+	out, err := c.run(ctx, "run", "ls", jobPath, "--json", "--limit", fmt.Sprint(limit), "--include-queued", "--select", "parameters")
 	if err != nil {
 		return nil, err
 	}
