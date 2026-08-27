@@ -47,6 +47,7 @@ type Model struct {
 	ready         bool
 
 	leftWidth, mainWidth               int
+	leftWidthOverride                  int // 0 = auto-sized; set once the user resizes with +/-
 	jobsHeight, runsHeight, bodyHeight int
 	mainHeight, debugHeight            int
 
@@ -366,16 +367,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(jobsCmd, runsCmd)
 }
 
+// leftWidthMin/Max bound both the automatic left-column width and how far
+// +/- can resize it by hand.
+const (
+	leftWidthMin = 20
+	leftWidthMax = 70
+)
+
 func (m *Model) layout() {
 	if !m.ready {
 		return
 	}
-	m.leftWidth = m.width * 3 / 10
-	if m.leftWidth < 24 {
-		m.leftWidth = 24
-	}
-	if m.leftWidth > 35 {
-		m.leftWidth = 35
+	if m.leftWidthOverride > 0 {
+		m.leftWidth = m.leftWidthOverride
+	} else {
+		m.leftWidth = m.width * 3 / 10
+		if m.leftWidth < leftWidthMin {
+			m.leftWidth = leftWidthMin
+		}
+		if m.leftWidth > 45 {
+			m.leftWidth = 45
+		}
 	}
 	m.mainWidth = m.width - m.leftWidth - 1
 	m.bodyHeight = m.height - 2 // header + status bar

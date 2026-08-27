@@ -150,7 +150,7 @@ func (m Model) footerView() string {
 	if m.debugOn {
 		jumpKeys = "1/2/3/4"
 	}
-	hints := jumpKeys + " · tab jump · ↑/k ↓/j move · / filter · r refresh · q quit"
+	hints := jumpKeys + " · tab jump · +/- resize · ↑/k ↓/j move · / filter · r refresh · q quit"
 	switch m.focus {
 	case focusJobs:
 		if m.jobFolder != "" {

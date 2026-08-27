@@ -66,6 +66,31 @@ func forwardToList(l list.Model, msg tea.KeyMsg) bool {
 	return false
 }
 
+// resizeLeft adjusts the left column (Jobs/Runs) width by delta columns,
+// clamped to [leftWidthMin, leftWidthMax]. Once used, it pins the width —
+// the automatic 30%-of-terminal sizing no longer applies this session.
+func (m *Model) resizeLeft(delta int) {
+	cur := m.leftWidthOverride
+	if cur == 0 {
+		cur = m.leftWidth
+	}
+	cur += delta
+	if cur < leftWidthMin {
+		cur = leftWidthMin
+	}
+	if cur > leftWidthMax {
+		cur = leftWidthMax
+	}
+	m.leftWidthOverride = cur
+	m.layout()
+	if m.mainMode == mainLog {
+		m.refreshLogView()
+	}
+	if m.debugOn {
+		m.refreshDebugView()
+	}
+}
+
 func (m *Model) cycleFocus() {
 	switch m.focus {
 	case focusJobs:
@@ -173,6 +198,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focus = focusDebug
 			return m, nil
 		}
+	case "+", "=":
+		if !m.typingInFilter() {
+			m.resizeLeft(2)
+			return m, nil
+		}
+	case "-", "_":
+		if !m.typingInFilter() {
+			m.resizeLeft(-2)
+			return m, nil
+		}
 	}
 
 	switch m.focus {
@@ -202,6 +237,7 @@ func (m Model) handleJobsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.selectedJob = joinJobPath(m.jobFolder, it.job.Name)
 			m.selectedRun = nil
+			m.runs.ResetFilter() // clear any filter left from a previously viewed job
 			m.loadingRuns = true
 			m.focus = focusRuns
 			return m, fetchRunsCmd(m.client, m.selectedJob)
@@ -242,6 +278,12 @@ func (m Model) enterFolder(name string) (tea.Model, tea.Cmd) {
 	m.jobFolder = joinJobPath(m.jobFolder, name)
 	m.selectedJob = ""
 	m.selectedRun = nil
+	// A filter typed for the parent listing (e.g. what you used to find
+	// this folder) would otherwise silently apply to the child listing
+	// too — bubbles' list.SetItems doesn't clear it on its own, and it can
+	// hide every item (or leave one coincidental match) with no visible
+	// indication why.
+	m.jobs.ResetFilter()
 	m.loadingJobs = true
 	return m, fetchJobsCmd(m.client, m.jobFolder)
 }
@@ -252,6 +294,7 @@ func (m Model) exitFolder() (tea.Model, tea.Cmd) {
 	}
 	m.jobFolder = m.folderStack[len(m.folderStack)-1]
 	m.folderStack = m.folderStack[:len(m.folderStack)-1]
+	m.jobs.ResetFilter()
 	m.loadingJobs = true
 	return m, fetchJobsCmd(m.client, m.jobFolder)
 }
