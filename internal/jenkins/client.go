@@ -110,6 +110,34 @@ func (c *Client) AuthStatus(ctx context.Context) (AuthStatus, error) {
 	return st, nil
 }
 
+// ContextLs lists jk's configured Jenkins contexts. Each line of output is
+// a 1-char active marker ('*' or ' '), a space, then "name\turl".
+func (c *Client) ContextLs(ctx context.Context) ([]Context, error) {
+	out, err := c.run(ctx, "context", "ls")
+	if err != nil {
+		return nil, err
+	}
+	var contexts []Context
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		active := strings.HasPrefix(line, "*")
+		if len(line) > 2 {
+			line = line[2:]
+		} else {
+			line = ""
+		}
+		name, url, _ := strings.Cut(line, "\t")
+		contexts = append(contexts, Context{
+			Name:   strings.TrimSpace(name),
+			URL:    strings.TrimSpace(url),
+			Active: active,
+		})
+	}
+	return contexts, nil
+}
+
 func (c *Client) JobLs(ctx context.Context, folder string) ([]Job, error) {
 	a := []string{"job", "ls", "--json"}
 	if folder != "" {

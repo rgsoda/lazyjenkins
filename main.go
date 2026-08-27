@@ -31,9 +31,18 @@ func main() {
 		os.Exit(runJKPassthrough(binPath, args))
 	}
 
+	// A context the user already pinned — via flag or jk's own env var —
+	// means skip the picker; jk resolves JK_CONTEXT itself from our
+	// subprocess's inherited environment, so we don't need to thread it
+	// through client.Context ourselves.
+	explicitContext := *context
+	if explicitContext == "" {
+		explicitContext = os.Getenv("JK_CONTEXT")
+	}
+
 	client := jenkins.New(*context)
 	client.Bin = binPath
-	m := ui.New(client, *debug)
+	m := ui.New(client, *debug, explicitContext)
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

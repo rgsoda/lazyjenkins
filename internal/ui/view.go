@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -9,6 +10,9 @@ import (
 func (m Model) View() string {
 	if !m.ready {
 		return "starting lazyjenkins..."
+	}
+	if m.pickingContext {
+		return m.contextPickView()
 	}
 	if m.confirm != confirmNone {
 		return m.confirmView()
@@ -172,6 +176,28 @@ func (m Model) footerView() string {
 	}
 	filler := statusBarStyle.Render(fmt.Sprintf("%*s", gap, ""))
 	return left + filler + right
+}
+
+func (m Model) contextPickView() string {
+	var b strings.Builder
+	b.WriteString(modalTitleStyle.Render("Choose a Jenkins context") + "\n\n")
+	for i, c := range m.contexts {
+		cursor := "  "
+		style := lipgloss.NewStyle()
+		if i == m.contextIdx {
+			cursor = lipgloss.NewStyle().Foreground(colorFocused).Render("▎") + " "
+			style = style.Bold(true)
+		}
+		label := c.Name
+		if c.Active {
+			label += "  " + lipgloss.NewStyle().Foreground(colorSubtle).Render("(active)")
+		}
+		b.WriteString(cursor + style.Render(label) + "\n")
+		b.WriteString("    " + lipgloss.NewStyle().Foreground(colorSubtle).Render(c.URL) + "\n")
+	}
+	b.WriteString("\n" + keyHintStyle.Render(" ↑/k ↓/j move · enter select · q quit "))
+	box := modalStyle.Render(b.String())
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
 func (m Model) confirmView() string {

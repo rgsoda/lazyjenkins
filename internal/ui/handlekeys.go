@@ -33,6 +33,22 @@ func isActive(r jenkins.Run) bool {
 	return r.Result == ""
 }
 
+func (m Model) handleContextPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q", "esc":
+		return m, tea.Quit
+	case "up", "k":
+		m.contextIdx = (m.contextIdx - 1 + len(m.contexts)) % len(m.contexts)
+	case "down", "j":
+		m.contextIdx = (m.contextIdx + 1) % len(m.contexts)
+	case "enter":
+		m.client.Context = m.contexts[m.contextIdx].Name
+		m.pickingContext = false
+		return m, m.startupCmds()
+	}
+	return m, nil
+}
+
 func (m Model) typingInFilter() bool {
 	return m.jobs.FilterState() == list.Filtering || m.runs.FilterState() == list.Filtering
 }

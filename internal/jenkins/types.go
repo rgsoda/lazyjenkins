@@ -60,3 +60,12 @@ type AuthStatus struct {
 	URL      string
 	Username string
 }
+
+// Context is one configured Jenkins connection, from `jk context ls`
+// (parsed from plain text — like auth status, this command has no --json
+// support either).
+type Context struct {
+	Name   string
+	URL    string
+	Active bool
+}

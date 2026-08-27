@@ -89,9 +89,17 @@ type Model struct {
 
 	status string
 	errStr string
+
+	// Context picker, shown before anything else loads when the user
+	// didn't pin a context (via --context/JK_CONTEXT) and jk has 2+
+	// configured. See contextsLoadedMsg and handleContextPickKey.
+	explicitContext string
+	pickingContext  bool
+	contexts        []jenkins.Context
+	contextIdx      int
 }
 
-func New(client *jenkins.Client, debug bool) Model {
+func New(client *jenkins.Client, debug bool, explicitContext string) Model {
 	var debugCh <-chan jenkins.DebugEntry
 	if debug {
 		ch := make(chan jenkins.DebugEntry, 256)
@@ -127,22 +135,34 @@ func New(client *jenkins.Client, debug bool) Model {
 	debugVP.SetHorizontalStep(10)
 
 	return Model{
-		client:      client,
-		jobs:        jobsList,
-		runs:        runsList,
-		spinner:     sp,
-		log:         vp,
-		wrapLogs:    true,
-		search:      newLogSearch(),
-		focus:       focusJobs,
-		loadingJobs: true,
-		debugOn:     debug,
-		debugCh:     debugCh,
-		debugVP:     debugVP,
+		client:          client,
+		jobs:            jobsList,
+		runs:            runsList,
+		spinner:         sp,
+		log:             vp,
+		wrapLogs:        true,
+		search:          newLogSearch(),
+		focus:           focusJobs,
+		loadingJobs:     true,
+		debugOn:         debug,
+		debugCh:         debugCh,
+		debugVP:         debugVP,
+		explicitContext: explicitContext,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
+	if m.explicitContext != "" {
+		return m.startupCmds()
+	}
+	// No context pinned via --context/JK_CONTEXT: find out if there's
+	// even a choice to make before loading anything else.
+	return fetchContextsCmd(m.client)
+}
+
+// startupCmds is the normal "go load everything" batch — fired immediately
+// when a context is already pinned, or once the user picks one.
+func (m Model) startupCmds() tea.Cmd {
 	cmds := []tea.Cmd{fetchAuthCmd(m.client), fetchJobsCmd(m.client), m.spinner.Tick, tickCmd()}
 	if m.debugOn {
 		cmds = append(cmds, waitForDebugCmd(m.debugCh))
@@ -168,7 +188,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.pickingContext {
+			return m.handleContextPickKey(msg)
+		}
 		return m.handleKey(msg)
+
+	case contextsLoadedMsg:
+		if len(msg.contexts) <= 1 {
+			return m, m.startupCmds()
+		}
+		m.contexts = msg.contexts
+		for i, c := range msg.contexts {
+			if c.Active {
+				m.contextIdx = i
+			}
+		}
+		m.pickingContext = true
+		return m, nil
 
 	case authLoadedMsg:
 		m.auth = msg.auth
@@ -231,6 +267,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.loadingJobs, m.loadingRuns, m.loadingLog, m.busy = false, false, false, false
 		m.errStr = fmt.Sprintf("[%s] %v", msg.scope, msg.err)
+		if msg.scope == "contexts" {
+			// Failing to list contexts shouldn't brick startup — just
+			// proceed with whatever jk's own active context is.
+			return m, m.startupCmds()
+		}
 		return m, nil
 
 	case logLoadedMsg:

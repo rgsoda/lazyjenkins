@@ -11,6 +11,7 @@ import (
 
 type authLoadedMsg struct{ auth jenkins.AuthStatus }
 type debugEntryMsg jenkins.DebugEntry
+type contextsLoadedMsg struct{ contexts []jenkins.Context }
 type errMsg struct {
 	scope string // "jobs", "runs", "params", "log", "action"
 	err   error
@@ -59,6 +60,16 @@ func fetchAuthCmd(c *jenkins.Client) tea.Cmd {
 			return errMsg{scope: "auth", err: err}
 		}
 		return authLoadedMsg{auth: st}
+	}
+}
+
+func fetchContextsCmd(c *jenkins.Client) tea.Cmd {
+	return func() tea.Msg {
+		contexts, err := c.ContextLs(context.Background())
+		if err != nil {
+			return errMsg{scope: "contexts", err: err}
+		}
+		return contextsLoadedMsg{contexts: contexts}
 	}
 }
 
