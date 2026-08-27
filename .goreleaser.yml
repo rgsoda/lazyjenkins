@@ -5,11 +5,14 @@ project_name: lazyjenkins
 before:
   hooks:
     - go mod tidy
+    - ./scripts/fetch-jk.sh
 
 builds:
   - id: lazyjenkins
     main: .
     binary: lazyjenkins
+    flags:
+      - -tags=embedjk
     env:
       - CGO_ENABLED=0
     goos:
@@ -26,6 +29,9 @@ archives:
     formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
+      - THIRD_PARTY_LICENSES.md
 
 checksum:
   name_template: "checksums.txt"
