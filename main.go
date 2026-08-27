@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -18,8 +19,20 @@ func main() {
 	jkBin := flag.String("jk-bin", "", "path to a jk binary to use (defaults to the bundled copy, falling back to jk on PATH)")
 	flag.Parse()
 
+	binPath := resolveJKBin(*jkBin)
+
+	// Any positional argument means "run this jk subcommand", not "launch
+	// the TUI" — e.g. `lazyjenkins auth login <url> --token X` sets up
+	// jk's own context (URL, token in the OS keychain) without needing a
+	// separate jk install. Every jk subcommand works this way, not just
+	// auth: we're just forwarding to whichever jk we'd otherwise exec
+	// internally, stdio connected straight through.
+	if args := flag.Args(); len(args) > 0 {
+		os.Exit(runJKPassthrough(binPath, args))
+	}
+
 	client := jenkins.New(*context)
-	client.Bin = resolveJKBin(*jkBin)
+	client.Bin = binPath
 	m := ui.New(client, *debug)
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -27,6 +40,21 @@ func main() {
 		fmt.Fprintln(os.Stderr, "lazyjenkins:", err)
 		os.Exit(1)
 	}
+}
+
+// runJKPassthrough execs binPath with args, stdio connected straight
+// through, and returns the exit code to propagate.
+func runJKPassthrough(binPath string, args []string) int {
+	cmd := exec.Command(binPath, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return ee.ExitCode()
+		}
+		fmt.Fprintln(os.Stderr, "lazyjenkins:", err)
+		return 1
+	}
+	return 0
 }
 
 // resolveJKBin picks which jk binary to exec: an explicit --jk-bin always
