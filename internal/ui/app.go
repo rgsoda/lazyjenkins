@@ -19,6 +19,7 @@ const (
 	focusJobs focusZone = iota
 	focusRuns
 	focusMain
+	focusDebug
 )
 
 type mainMode int
@@ -47,6 +48,12 @@ type Model struct {
 
 	leftWidth, mainWidth               int
 	jobsHeight, runsHeight, bodyHeight int
+	mainHeight, debugHeight            int
+
+	debugOn    bool
+	debugCh    <-chan jenkins.DebugEntry
+	debugLines []string
+	debugVP    viewport.Model
 
 	jobs list.Model
 	runs list.Model
@@ -57,13 +64,16 @@ type Model struct {
 	focus    focusZone
 	mainMode mainMode
 
-	log          viewport.Model
-	logLines     []string
-	following    bool
-	logCancel    context.CancelFunc
-	logRunPath   string
-	logRunNumber int
-	logGen       int
+	log           viewport.Model
+	logLines      []string
+	logRowOffsets []int // logical line -> visual row, once word-wrapped
+	wrapLogs      bool
+	following     bool
+	logCancel     context.CancelFunc
+	logRunPath    string
+	logRunNumber  int
+	logGen        int
+	search        logSearch
 
 	form paramsForm
 
@@ -81,7 +91,19 @@ type Model struct {
 	errStr string
 }
 
-func New(client *jenkins.Client) Model {
+func New(client *jenkins.Client, debug bool) Model {
+	var debugCh <-chan jenkins.DebugEntry
+	if debug {
+		ch := make(chan jenkins.DebugEntry, 256)
+		debugCh = ch
+		client.Debug = func(e jenkins.DebugEntry) {
+			select {
+			case ch <- e:
+			default: // pane can't keep up; drop rather than block jk calls
+			}
+		}
+	}
+
 	jobsList := list.New(nil, rowDelegate{showDesc: false}, 0, 0)
 	jobsList.SetShowTitle(false)
 	jobsList.SetShowStatusBar(false)
@@ -98,6 +120,11 @@ func New(client *jenkins.Client) Model {
 	sp.Spinner = spinner.Dot
 
 	vp := viewport.New(0, 0)
+	debugVP := viewport.New(0, 0)
+	// bubbles' horizontal scroll step defaults to 0 (a silent no-op for
+	// h/l/left/right) unless set explicitly — needed for nowrap mode.
+	vp.SetHorizontalStep(10)
+	debugVP.SetHorizontalStep(10)
 
 	return Model{
 		client:      client,
@@ -105,13 +132,22 @@ func New(client *jenkins.Client) Model {
 		runs:        runsList,
 		spinner:     sp,
 		log:         vp,
+		wrapLogs:    true,
+		search:      newLogSearch(),
 		focus:       focusJobs,
 		loadingJobs: true,
+		debugOn:     debug,
+		debugCh:     debugCh,
+		debugVP:     debugVP,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(fetchAuthCmd(m.client), fetchJobsCmd(m.client), m.spinner.Tick, tickCmd())
+	cmds := []tea.Cmd{fetchAuthCmd(m.client), fetchJobsCmd(m.client), m.spinner.Tick, tickCmd()}
+	if m.debugOn {
+		cmds = append(cmds, waitForDebugCmd(m.debugCh))
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -121,6 +157,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.ready = true
 		m.layout()
+		if m.mainMode == mainLog {
+			// Wrapping is width-dependent; re-flow already-loaded content
+			// against the new width instead of leaving it wrapped stale.
+			m.refreshLogView()
+		}
+		if m.debugOn {
+			m.refreshDebugView()
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -151,18 +195,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			items[i] = runItem{run: r}
 		}
 		cmd := m.runs.SetItems(items)
+		// Sitting in an empty runs panel is a dead end — bounce to the main
+		// panel, which now shows a "press s to start one" prompt. Only when
+		// we're actually parked in the runs panel, so a quiet background
+		// refresh never yanks focus away from wherever the user is.
+		if len(items) == 0 && m.focus == focusRuns {
+			m.focus = focusMain
+		}
 		return m, cmd
 
 	case paramsLoadedMsg:
 		m.busy = false
 		m.status = ""
 		m.errStr = ""
-		if len(msg.params) == 0 {
-			m.confirm = confirmStart
-			m.confirmPrompt = fmt.Sprintf("Start run for %q with no parameters?", msg.jobPath)
-			m.confirmParams = map[string]string{}
-			return m, nil
-		}
+		// Always open the form, even with zero discovered params: jk can't
+		// discover Jenkinsfile-declared parameters for a job with no prior
+		// runs, but the job may still take some — let the user add them by
+		// hand via the form's custom key=value rows.
 		m.form = newParamsForm(msg.jobPath, msg.params)
 		m.mainMode = mainParams
 		m.focus = focusMain
@@ -191,7 +240,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loadingLog = false
 		m.errStr = ""
 		m.logLines = strings.Split(msg.content, "\n")
-		m.log.SetContent(msg.content)
+		m.refreshLogView()
 		m.log.GotoBottom()
 		return m, nil
 
@@ -211,8 +260,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.logLines = append(m.logLines, msg.line)
-		m.log.SetContent(strings.Join(m.logLines, "\n"))
-		m.log.GotoBottom()
+		m.search.noteNewLine(len(m.logLines)-1, msg.line)
+		m.refreshLogView()
+		if !m.search.active {
+			m.log.GotoBottom()
+		}
 		return m, waitForLogLineCmd(msg.gen, msg.ch)
 
 	case logStreamDoneMsg:
@@ -221,7 +273,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.following = false
 		m.logLines = append(m.logLines, "", "-- stream ended --")
-		m.log.SetContent(strings.Join(m.logLines, "\n"))
+		m.refreshLogView()
 		m.log.GotoBottom()
 		if m.selectedJob != "" {
 			return m, fetchRunsCmd(m.client, m.selectedJob)
@@ -243,6 +295,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+
+	case debugEntryMsg:
+		m.debugLines = append(m.debugLines, formatDebugEntry(jenkins.DebugEntry(msg)))
+		if len(m.debugLines) > maxDebugLines {
+			m.debugLines = m.debugLines[len(m.debugLines)-maxDebugLines:]
+		}
+		m.refreshDebugView()
+		m.debugVP.GotoBottom()
+		return m, waitForDebugCmd(m.debugCh)
 	}
 
 	// Anything we don't special-case (e.g. list.FilterMatchesMsg, produced
@@ -277,8 +338,17 @@ func (m *Model) layout() {
 	// -2 for the border; the panel title lives in the border itself now.
 	m.jobs.SetSize(leftContentW, max(0, m.jobsHeight-2))
 	m.runs.SetSize(leftContentW, max(0, m.runsHeight-2))
+
+	if m.debugOn {
+		m.debugHeight = max(5, m.bodyHeight/3)
+		m.mainHeight = m.bodyHeight - m.debugHeight - 1 // -1 for the gap between them
+		m.debugVP.Width = mainContentW
+		m.debugVP.Height = max(0, m.debugHeight-2)
+	} else {
+		m.mainHeight = m.bodyHeight
+	}
 	m.log.Width = mainContentW
-	m.log.Height = max(0, m.bodyHeight-2)
+	m.log.Height = max(0, m.mainHeight-2)
 }
 
 func max(a, b int) int {

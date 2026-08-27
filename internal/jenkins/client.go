@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Client shells out to the `jk` binary. All calls are blocking; callers
@@ -14,6 +15,21 @@ import (
 type Client struct {
 	Bin     string
 	Context string
+
+	// Debug, if set, is called with the exact argv, timing, and result of
+	// every jk invocation — including flags a caller added (--limit,
+	// --select, --folder, etc.) that might explain "I don't see my build"
+	// reports. Must not block; the client doesn't wait for it.
+	Debug func(DebugEntry)
+}
+
+// DebugEntry describes one `jk` invocation, for --debug's log pane.
+type DebugEntry struct {
+	Time     time.Time
+	Args     []string // full argv, including the binary name
+	Duration time.Duration
+	Err      error
+	Preview  string // first line or so of stdout, for calls that returned data
 }
 
 func New(context string) *Client {
@@ -29,15 +45,44 @@ func (c *Client) args(a ...string) []string {
 	return out
 }
 
+func (c *Client) emitDebug(start time.Time, args []string, out []byte, err error) {
+	if c.Debug == nil {
+		return
+	}
+	c.Debug(DebugEntry{
+		Time:     start,
+		Args:     append([]string{c.Bin}, args...),
+		Duration: time.Since(start),
+		Err:      err,
+		Preview:  preview(out),
+	})
+}
+
+// preview returns the first line of out, truncated, for the debug log —
+// full output (a whole console log, say) has no place in a one-line entry.
+func preview(out []byte) string {
+	line, _, _ := strings.Cut(string(out), "\n")
+	line = strings.TrimSpace(line)
+	const max = 200
+	if len(line) > max {
+		return line[:max] + "…"
+	}
+	return line
+}
+
 func (c *Client) run(ctx context.Context, a ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, c.Bin, c.args(a...)...)
+	args := c.args(a...)
+	start := time.Now()
+	cmd := exec.CommandContext(ctx, c.Bin, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
-			return out, fmt.Errorf("%s: %s", err, strings.TrimSpace(string(ee.Stderr)))
+			err = fmt.Errorf("%s: %s", err, strings.TrimSpace(string(ee.Stderr)))
 		}
+		c.emitDebug(start, args, out, err)
 		return out, err
 	}
+	c.emitDebug(start, args, out, nil)
 	return out, nil
 }
 
@@ -138,14 +183,19 @@ func (c *Client) LogFull(ctx context.Context, jobPath string, buildNumber int) (
 // or ctx is cancelled. Cleaned lines are sent on the returned channel, which
 // is closed when the underlying process exits.
 func (c *Client) LogFollow(ctx context.Context, jobPath string, buildNumber int) (<-chan string, error) {
-	cmd := exec.CommandContext(ctx, c.Bin, c.args("log", jobPath, fmt.Sprint(buildNumber), "--plain", "--follow")...)
+	args := c.args("log", jobPath, fmt.Sprint(buildNumber), "--plain", "--follow")
+	start := time.Now()
+	cmd := exec.CommandContext(ctx, c.Bin, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		c.emitDebug(start, args, nil, err)
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
+		c.emitDebug(start, args, nil, err)
 		return nil, err
 	}
+	c.emitDebug(start, args, []byte("streaming started"), nil)
 	lines := make(chan string, 256)
 	go func() {
 		defer close(lines)

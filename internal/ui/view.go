@@ -28,9 +28,18 @@ func (m Model) View() string {
 	runsPanel := m.renderPanel(focusRuns, m.runsTitle(), m.leftWidth, m.runsHeight, runsContent)
 	left := lipgloss.JoinVertical(lipgloss.Left, jobsPanel, runsPanel)
 
-	main := m.renderPanel(focusMain, m.mainTitle(), m.mainWidth, m.bodyHeight, m.mainContent())
+	main := m.renderPanel(focusMain, m.mainTitle(), m.mainWidth, m.mainHeight, m.mainContent())
+	right := main
+	if m.debugOn {
+		debugTitle := "Debug — jk calls"
+		if !m.wrapLogs {
+			debugTitle += " · nowrap"
+		}
+		debugPanel := m.renderPanel(focusDebug, debugTitle, m.mainWidth, m.debugHeight, m.debugVP.View())
+		right = lipgloss.JoinVertical(lipgloss.Left, main, debugPanel)
+	}
 
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", main)
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, m.footerView())
 }
@@ -41,8 +50,10 @@ func zoneNumber(zone focusZone) int {
 		return 1
 	case focusRuns:
 		return 2
-	default:
+	case focusMain:
 		return 3
+	default:
+		return 4
 	}
 }
 
@@ -64,7 +75,17 @@ func (m Model) mainTitle() string {
 		if m.following {
 			state = m.spinner.View() + " following"
 		}
-		return fmt.Sprintf("Log — %s #%d (%s, %d lines)", m.logRunPath, m.logRunNumber, state, len(m.logLines))
+		title := fmt.Sprintf("Log — %s #%d (%s, %d lines)", m.logRunPath, m.logRunNumber, state, len(m.logLines))
+		if !m.wrapLogs {
+			title += " · nowrap"
+		}
+		switch {
+		case m.search.err != "":
+			title += " · /" + m.search.raw + " " + m.search.err
+		case m.search.active:
+			title += fmt.Sprintf(" · /%s %d/%d", m.search.raw, m.search.idx+1, len(m.search.matches))
+		}
+		return title
 	case mainParams:
 		return "Start Run"
 	default:
@@ -82,11 +103,17 @@ func (m Model) mainContent() string {
 	case mainParams:
 		return m.form.View()
 	default:
+		style := lipgloss.NewStyle().Foreground(colorSubtle)
 		if m.selectedJob == "" {
-			return lipgloss.NewStyle().Foreground(colorSubtle).Render("Select a job, then a run, to see details here.")
+			return style.Render("Select a job, then a run, to see details here.")
 		}
-		return lipgloss.NewStyle().Foreground(colorSubtle).Render(
-			"Job: " + m.selectedJob + "\n\nPress enter on a run to view its log.")
+		if m.loadingRuns {
+			return style.Render("Job: " + m.selectedJob)
+		}
+		if len(m.runs.Items()) == 0 {
+			return style.Render("Job: " + m.selectedJob + "\n\nNo runs found.\nPress s to start one.")
+		}
+		return style.Render("Job: " + m.selectedJob + "\n\nPress enter on a run to view its log.")
 	}
 }
 
@@ -104,16 +131,31 @@ func (m Model) headerView() string {
 }
 
 func (m Model) footerView() string {
-	hints := "1/2/3 · tab jump · ↑/k ↓/j move · / filter · r refresh · q quit"
+	if m.focus == focusMain && m.search.typing {
+		return keyHintStyle.Render(" " + m.search.input.View())
+	}
+
+	jumpKeys := "1/2/3"
+	if m.debugOn {
+		jumpKeys = "1/2/3/4"
+	}
+	hints := jumpKeys + " · tab jump · ↑/k ↓/j move · / filter · r refresh · q quit"
 	switch m.focus {
 	case focusJobs:
 		hints = "enter open job · s start run · " + hints
 	case focusRuns:
 		hints = "enter view log · s start · R rerun · c cancel · " + hints
 	case focusMain:
-		if m.mainMode == mainLog {
-			hints = "esc back · R rerun · c cancel · ↑/k ↓/j scroll · q quit"
+		switch {
+		case m.mainMode == mainLog && m.search.active:
+			hints = "esc back · / search · n/N next/prev match · w wrap · R rerun · c cancel · ↑/k ↓/j scroll · q quit"
+		case m.mainMode == mainLog:
+			hints = "esc back · / search · w wrap · R rerun · c cancel · ↑/k ↓/j scroll · q quit"
+		case m.mainMode == mainEmpty && m.selectedJob != "":
+			hints = "s start run · " + hints
 		}
+	case focusDebug:
+		hints = "c clear · w wrap · ↑/k ↓/j scroll · " + hints
 	}
 	left := keyHintStyle.Render(" " + hints)
 	right := ""

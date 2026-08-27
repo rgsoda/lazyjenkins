@@ -10,17 +10,24 @@ import (
 	"lazyjenkins/internal/jenkins"
 )
 
-// paramsForm is a tiny sequential form: one textinput per job parameter.
+// extraCustomRows is how many blank "key=value" rows are always appended
+// after a job's known parameters, so params jk couldn't discover (e.g. a
+// job with no build history yet, or a Jenkinsfile-declared parameter jk
+// hasn't indexed) can still be supplied by hand.
+const extraCustomRows = 4
+
+// paramsForm is a tiny sequential form: one textinput per known job
+// parameter, plus a few blank "key=value" rows for custom ones.
 type paramsForm struct {
 	jobPath string
-	defs    []jenkins.Param
+	defs    []jenkins.Param // len(defs) of inputs are named params; the rest are custom key=value rows
 	inputs  []textinput.Model
 	active  int
 }
 
 func newParamsForm(jobPath string, defs []jenkins.Param) paramsForm {
 	f := paramsForm{jobPath: jobPath, defs: defs}
-	f.inputs = make([]textinput.Model, len(defs))
+	f.inputs = make([]textinput.Model, len(defs)+extraCustomRows)
 	for i, d := range defs {
 		ti := textinput.New()
 		ti.Prompt = ""
@@ -33,9 +40,13 @@ func newParamsForm(jobPath string, defs []jenkins.Param) paramsForm {
 		}
 		f.inputs[i] = ti
 	}
-	if len(f.inputs) > 0 {
-		f.inputs[0].Focus()
+	for i := len(defs); i < len(f.inputs); i++ {
+		ti := textinput.New()
+		ti.Prompt = ""
+		ti.Placeholder = "KEY=VALUE"
+		f.inputs[i] = ti
 	}
+	f.inputs[0].Focus()
 	return f
 }
 
@@ -83,6 +94,13 @@ func (f paramsForm) values() map[string]string {
 			out[d.Name] = v
 		}
 	}
+	for i := len(f.defs); i < len(f.inputs); i++ {
+		key, val, ok := strings.Cut(f.inputs[i].Value(), "=")
+		key = strings.TrimSpace(key)
+		if ok && key != "" {
+			out[key] = strings.TrimSpace(val)
+		}
+	}
 	return out
 }
 
@@ -104,6 +122,16 @@ func (f paramsForm) View() string {
 			style = formActiveLabel
 		}
 		b.WriteString(style.Render(label) + " " + f.inputs[i].View() + "\n")
+	}
+	if len(f.defs) > 0 {
+		b.WriteString("\n")
+	}
+	for i := len(f.defs); i < len(f.inputs); i++ {
+		style := formLabelStyle
+		if i == f.active {
+			style = formActiveLabel
+		}
+		b.WriteString(style.Render("+ custom param") + " " + f.inputs[i].View() + "\n")
 	}
 	b.WriteString("\n" + keyHintStyle.Render(" tab/↑↓ move · enter next/submit · esc cancel "))
 	return b.String()

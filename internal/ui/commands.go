@@ -10,6 +10,7 @@ import (
 )
 
 type authLoadedMsg struct{ auth jenkins.AuthStatus }
+type debugEntryMsg jenkins.DebugEntry
 type errMsg struct {
 	scope string // "jobs", "runs", "params", "log", "action"
 	err   error
@@ -150,6 +151,16 @@ func waitForLogLineCmd(gen int, ch <-chan string) tea.Cmd {
 			return logStreamDoneMsg{gen: gen}
 		}
 		return logLineMsg{gen: gen, line: line, ch: ch}
+	}
+}
+
+func waitForDebugCmd(ch <-chan jenkins.DebugEntry) tea.Cmd {
+	return func() tea.Msg {
+		e, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return debugEntryMsg(e)
 	}
 }
 

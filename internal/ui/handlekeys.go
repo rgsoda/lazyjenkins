@@ -2,12 +2,32 @@ package ui
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"lazyjenkins/internal/jenkins"
 )
+
+// formatParams renders a params map for the confirm prompt, sorted for
+// deterministic output (map iteration order isn't).
+func formatParams(params map[string]string) string {
+	if len(params) == 0 {
+		return "(no parameters)"
+	}
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	lines := make([]string, len(keys))
+	for i, k := range keys {
+		lines[i] = k + "=" + params[k]
+	}
+	return strings.Join(lines, "\n")
+}
 
 func isActive(r jenkins.Run) bool {
 	return r.Result == ""
@@ -37,10 +57,18 @@ func (m *Model) cycleFocus() {
 	case focusRuns:
 		if m.mainMode != mainEmpty {
 			m.focus = focusMain
+		} else if m.debugOn {
+			m.focus = focusDebug
 		} else {
 			m.focus = focusJobs
 		}
 	case focusMain:
+		if m.debugOn {
+			m.focus = focusDebug
+		} else {
+			m.focus = focusJobs
+		}
+	case focusDebug:
 		m.focus = focusJobs
 	}
 }
@@ -77,8 +105,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if submitted {
 			m.confirm = confirmStart
 			m.confirmParams = m.form.values()
-			m.confirmPrompt = fmt.Sprintf("Start run for %q with these parameters?", m.form.jobPath)
+			m.confirmPrompt = fmt.Sprintf("Start run for %q?\n\n%s", m.form.jobPath, formatParams(m.confirmParams))
 		}
+		return m, cmd
+	}
+
+	if m.search.typing {
+		switch msg.String() {
+		case "esc":
+			m.search.cancelTyping()
+			return m, nil
+		case "enter":
+			m.search.submit(m.logLines, m.log.YOffset)
+			m.refreshLogView()
+			m.scrollToCurrentMatch()
+			return m, nil
+		}
+		cmd := m.search.updateTyping(msg)
 		return m, cmd
 	}
 
@@ -109,6 +152,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focus = focusMain
 			return m, nil
 		}
+	case "4":
+		if m.debugOn && !m.typingInFilter() {
+			m.focus = focusDebug
+			return m, nil
+		}
 	}
 
 	switch m.focus {
@@ -118,6 +166,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRunsKey(msg)
 	case focusMain:
 		return m.handleMainKey(msg)
+	case focusDebug:
+		return m.handleDebugKey(msg)
 	}
 	return m, nil
 }
@@ -202,6 +252,35 @@ func (m Model) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mainMode = mainEmpty
 		m.focus = focusRuns
 		return m, nil
+	case "/":
+		if m.mainMode == mainLog {
+			m.search.begin()
+			return m, nil
+		}
+	case "n":
+		if m.mainMode == mainLog && m.search.active {
+			m.search.next()
+			m.refreshLogView()
+			m.scrollToCurrentMatch()
+			return m, nil
+		}
+	case "N":
+		if m.mainMode == mainLog && m.search.active {
+			m.search.prev()
+			m.refreshLogView()
+			m.scrollToCurrentMatch()
+			return m, nil
+		}
+	case "w":
+		if m.mainMode == mainLog {
+			m.wrapLogs = !m.wrapLogs
+			m.refreshLogView()
+			return m, nil
+		}
+	case "s":
+		if m.mainMode == mainEmpty {
+			return m.beginStart()
+		}
 	case "R":
 		if m.selectedRun != nil {
 			return m.beginRerun()
@@ -213,6 +292,22 @@ func (m Model) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.log, cmd = m.log.Update(msg)
+	return m, cmd
+}
+
+func (m Model) handleDebugKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "c":
+		m.debugLines = nil
+		m.debugVP.SetContent("")
+		return m, nil
+	case "w":
+		m.wrapLogs = !m.wrapLogs
+		m.refreshDebugView()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.debugVP, cmd = m.debugVP.Update(msg)
 	return m, cmd
 }
 
@@ -244,6 +339,7 @@ func (m Model) openLog(run jenkins.Run) (tea.Model, tea.Cmd) {
 	m.mainMode = mainLog
 	m.focus = focusMain
 	m.logLines = nil
+	m.search = newLogSearch()
 	m.log.SetContent("")
 	m.loadingLog = true
 	m.logRunPath = m.selectedJob
