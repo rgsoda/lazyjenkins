@@ -28,7 +28,7 @@ func (m Model) View() string {
 	if m.loadingRuns {
 		runsContent = "  " + m.spinner.View() + " loading runs..."
 	}
-	jobsPanel := m.renderPanel(focusJobs, "Jobs", m.leftWidth, m.jobsHeight, jobsContent)
+	jobsPanel := m.renderPanel(focusJobs, m.jobsTitle(), m.leftWidth, m.jobsHeight, jobsContent)
 	runsPanel := m.renderPanel(focusRuns, m.runsTitle(), m.leftWidth, m.runsHeight, runsContent)
 	left := lipgloss.JoinVertical(lipgloss.Left, jobsPanel, runsPanel)
 
@@ -63,6 +63,13 @@ func zoneNumber(zone focusZone) int {
 
 func (m Model) renderPanel(zone focusZone, title string, width, height int, content string) string {
 	return renderBoxedPanel(m.focus == zone, max(0, width-2), max(0, height-2), zoneNumber(zone), title, content)
+}
+
+func (m Model) jobsTitle() string {
+	if m.jobFolder == "" {
+		return "Jobs"
+	}
+	return "Jobs — " + m.jobFolder
 }
 
 func (m Model) runsTitle() string {
@@ -146,7 +153,11 @@ func (m Model) footerView() string {
 	hints := jumpKeys + " · tab jump · ↑/k ↓/j move · / filter · r refresh · q quit"
 	switch m.focus {
 	case focusJobs:
-		hints = "enter open job · s start run · " + hints
+		if m.jobFolder != "" {
+			hints = "enter open · esc back · s start run · " + hints
+		} else {
+			hints = "enter open · s start run · " + hints
+		}
 	case focusRuns:
 		hints = "enter view log · s start · R rerun · c cancel · " + hints
 	case focusMain:

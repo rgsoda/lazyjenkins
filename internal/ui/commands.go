@@ -17,7 +17,10 @@ type errMsg struct {
 	err   error
 }
 
-type jobsLoadedMsg struct{ jobs []jenkins.Job }
+type jobsLoadedMsg struct {
+	folder string
+	jobs   []jenkins.Job
+}
 type runsLoadedMsg struct {
 	jobPath string
 	runs    []jenkins.Run
@@ -73,13 +76,13 @@ func fetchContextsCmd(c *jenkins.Client) tea.Cmd {
 	}
 }
 
-func fetchJobsCmd(c *jenkins.Client) tea.Cmd {
+func fetchJobsCmd(c *jenkins.Client, folder string) tea.Cmd {
 	return func() tea.Msg {
-		jobs, err := c.JobLs(context.Background(), "")
+		jobs, err := c.JobLs(context.Background(), folder)
 		if err != nil {
 			return errMsg{scope: "jobs", err: err}
 		}
-		return jobsLoadedMsg{jobs: jobs}
+		return jobsLoadedMsg{folder: folder, jobs: jobs}
 	}
 }
 

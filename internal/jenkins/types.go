@@ -1,11 +1,19 @@
 package jenkins
 
-// Job is one entry from `jk job ls --json`.
+// Job is one entry from `jk job ls --json`. This can be a real buildable
+// job OR a folder / multibranch-pipeline container: Jenkins only assigns a
+// ball color to actual buildable job types (even "notbuilt" for one that's
+// never run), so an empty Color means it's a container with no runs of its
+// own — its real (per-branch, typically) jobs are one level deeper.
 type Job struct {
 	Name  string `json:"name"`
 	URL   string `json:"url"`
 	Color string `json:"color"`
 }
+
+// IsFolder reports whether this entry is a folder/container rather than a
+// runnable job — see the Job doc comment.
+func (j Job) IsFolder() bool { return j.Color == "" }
 
 // Run is one entry from `jk run ls --json`. Branch/Commit reflect the SCM
 // checkout of the job's own Jenkinsfile, which for parameterized "deploy

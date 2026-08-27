@@ -197,25 +197,63 @@ func (m Model) handleJobsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		if it, ok := m.jobs.SelectedItem().(jobItem); ok {
-			m.selectedJob = it.job.Name
+			if it.job.IsFolder() {
+				return m.enterFolder(it.job.Name)
+			}
+			m.selectedJob = joinJobPath(m.jobFolder, it.job.Name)
 			m.selectedRun = nil
 			m.loadingRuns = true
 			m.focus = focusRuns
 			return m, fetchRunsCmd(m.client, m.selectedJob)
 		}
 		return m, nil
+	case "esc":
+		if m.jobFolder != "" {
+			return m.exitFolder()
+		}
 	case "r":
 		m.loadingJobs = true
-		return m, fetchJobsCmd(m.client)
+		return m, fetchJobsCmd(m.client, m.jobFolder)
 	case "s":
-		if it, ok := m.jobs.SelectedItem().(jobItem); ok {
-			m.selectedJob = it.job.Name
+		if it, ok := m.jobs.SelectedItem().(jobItem); ok && !it.job.IsFolder() {
+			m.selectedJob = joinJobPath(m.jobFolder, it.job.Name)
+			return m.beginStart()
 		}
-		return m.beginStart()
+		return m, nil
 	}
 	var cmd tea.Cmd
 	m.jobs, cmd = m.jobs.Update(msg)
 	return m, cmd
+}
+
+// joinJobPath builds a jk job path from a folder and a child name. jk
+// already returns child names pre-encoded exactly as Jenkins expects them
+// back (e.g. a branch "feat/x" is reported as "feat%2Fx"), so this is a
+// plain join — no extra escaping needed.
+func joinJobPath(folder, name string) string {
+	if folder == "" {
+		return name
+	}
+	return folder + "/" + name
+}
+
+func (m Model) enterFolder(name string) (tea.Model, tea.Cmd) {
+	m.folderStack = append(m.folderStack, m.jobFolder)
+	m.jobFolder = joinJobPath(m.jobFolder, name)
+	m.selectedJob = ""
+	m.selectedRun = nil
+	m.loadingJobs = true
+	return m, fetchJobsCmd(m.client, m.jobFolder)
+}
+
+func (m Model) exitFolder() (tea.Model, tea.Cmd) {
+	if len(m.folderStack) == 0 {
+		return m, nil
+	}
+	m.jobFolder = m.folderStack[len(m.folderStack)-1]
+	m.folderStack = m.folderStack[:len(m.folderStack)-1]
+	m.loadingJobs = true
+	return m, fetchJobsCmd(m.client, m.jobFolder)
 }
 
 func (m Model) handleRunsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

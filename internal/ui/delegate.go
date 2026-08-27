@@ -33,7 +33,11 @@ func (d rowDelegate) Render(w io.Writer, m list.Model, index int, item list.Item
 	var title, desc string
 	switch it := item.(type) {
 	case jobItem:
-		title = jobDot(it.job.Color) + " " + it.job.Name
+		if it.job.IsFolder() {
+			title = lipgloss.NewStyle().Foreground(colorSubtle).Render("▸") + " " + it.job.Name + "/"
+		} else {
+			title = jobDot(it.job.Color) + " " + it.job.Name
+		}
 	case runItem:
 		status := lipgloss.NewStyle().Foreground(resultColor(it.run.Result, it.run.Status)).
 			Render(fmt.Sprintf("%-9s", runResultLabel(it.run)))

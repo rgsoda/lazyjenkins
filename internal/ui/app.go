@@ -58,6 +58,13 @@ type Model struct {
 	jobs list.Model
 	runs list.Model
 
+	// jobFolder is "" at the root; drilling into a folder-type job entry
+	// (Jenkins folders and multibranch-pipeline containers report an empty
+	// color, unlike real buildable jobs) appends to it. folderStack holds
+	// parent paths for esc to pop back up.
+	jobFolder   string
+	folderStack []string
+
 	selectedJob string
 	selectedRun *jenkins.Run
 
@@ -163,7 +170,7 @@ func (m Model) Init() tea.Cmd {
 // startupCmds is the normal "go load everything" batch — fired immediately
 // when a context is already pinned, or once the user picks one.
 func (m Model) startupCmds() tea.Cmd {
-	cmds := []tea.Cmd{fetchAuthCmd(m.client), fetchJobsCmd(m.client), m.spinner.Tick, tickCmd()}
+	cmds := []tea.Cmd{fetchAuthCmd(m.client), fetchJobsCmd(m.client, m.jobFolder), m.spinner.Tick, tickCmd()}
 	if m.debugOn {
 		cmds = append(cmds, waitForDebugCmd(m.debugCh))
 	}
@@ -213,6 +220,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case jobsLoadedMsg:
 		m.loadingJobs = false
 		m.errStr = ""
+		if msg.folder != m.jobFolder {
+			return m, nil
+		}
 		items := make([]list.Item, len(msg.jobs))
 		for i, j := range msg.jobs {
 			items[i] = jobItem{job: j}
@@ -261,7 +271,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.selectedJob != "" {
 			cmds = append(cmds, fetchRunsCmd(m.client, m.selectedJob))
 		}
-		cmds = append(cmds, fetchJobsCmd(m.client))
+		cmds = append(cmds, fetchJobsCmd(m.client, m.jobFolder))
 		return m, tea.Batch(cmds...)
 
 	case errMsg:
@@ -324,7 +334,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		var cmds []tea.Cmd
 		if m.confirm == confirmNone && m.mainMode != mainParams {
-			cmds = append(cmds, fetchJobsCmd(m.client))
+			cmds = append(cmds, fetchJobsCmd(m.client, m.jobFolder))
 			if m.selectedJob != "" {
 				cmds = append(cmds, fetchRunsCmd(m.client, m.selectedJob))
 			}
