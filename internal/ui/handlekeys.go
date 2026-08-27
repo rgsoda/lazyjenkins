@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -335,6 +336,10 @@ func (m Model) handleRunsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selectedRun = &run
 			return m.beginCancel()
 		}
+	case "y":
+		if it, ok := m.runs.SelectedItem().(runItem); ok {
+			return m.copyBuildLink(it.run.URL)
+		}
 	}
 	var cmd tea.Cmd
 	m.runs, cmd = m.runs.Update(msg)
@@ -386,10 +391,26 @@ func (m Model) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.selectedRun != nil && isActive(*m.selectedRun) {
 			return m.beginCancel()
 		}
+	case "y":
+		if m.mainMode == mainLog && m.selectedRun != nil {
+			return m.copyBuildLink(m.selectedRun.URL)
+		}
 	}
 	var cmd tea.Cmd
 	m.log, cmd = m.log.Update(msg)
 	return m, cmd
+}
+
+// copyBuildLink copies a run's Jenkins URL to the system clipboard,
+// reporting success or failure the same way as other quick actions.
+func (m Model) copyBuildLink(url string) (tea.Model, tea.Cmd) {
+	if err := clipboard.WriteAll(url); err != nil {
+		m.errStr = fmt.Sprintf("[clipboard] %v", err)
+		return m, nil
+	}
+	m.errStr = ""
+	m.status = "copied " + url + " to clipboard"
+	return m, nil
 }
 
 func (m Model) handleDebugKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

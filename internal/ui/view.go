@@ -159,13 +159,13 @@ func (m Model) footerView() string {
 			hints = "enter open · s start run · " + hints
 		}
 	case focusRuns:
-		hints = "enter view log · s start · R rerun · c cancel · " + hints
+		hints = "enter view log · s start · R rerun · c cancel · y copy link · " + hints
 	case focusMain:
 		switch {
 		case m.mainMode == mainLog && m.search.active:
-			hints = "esc back · / search · n/N next/prev match · w wrap · R rerun · c cancel · ↑/k ↓/j scroll · q quit"
+			hints = "esc back · / search · n/N next/prev match · w wrap · R rerun · c cancel · y copy link · ↑/k ↓/j scroll · q quit"
 		case m.mainMode == mainLog:
-			hints = "esc back · / search · w wrap · R rerun · c cancel · ↑/k ↓/j scroll · q quit"
+			hints = "esc back · / search · w wrap · R rerun · c cancel · y copy link · ↑/k ↓/j scroll · q quit"
 		case m.mainMode == mainEmpty && m.selectedJob != "":
 			hints = "s start run · " + hints
 		}
