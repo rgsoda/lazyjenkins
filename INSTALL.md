@@ -91,6 +91,35 @@ brew install rgsoda/lazyjenkins/lazyjenkins
 
 ---
 
+## Method D — Nix
+
+If you use Nix, `lazyjenkins` is fully packaged and reproducible via its flake.
+
+### Run directly
+Execute `lazyjenkins` instantly without installing it:
+```bash
+nix run github:rgsoda/lazyjenkins
+```
+
+Or run the underlying `jk` CLI dependency directly:
+```bash
+nix run github:rgsoda/lazyjenkins#jk -- --help
+```
+
+### Install profile-wide
+Install `lazyjenkins` into your Nix user profile:
+```bash
+nix profile install github:rgsoda/lazyjenkins
+```
+
+### Development environment
+Enter a completely pre-configured developer shell containing Go, Gnumake, `golangci-lint`, and the `jk` dependency on your path:
+```bash
+nix develop
+```
+
+---
+
 ## First run
 
 `lazyjenkins` forwards any subcommand straight to the bundled `jk`, so you can
