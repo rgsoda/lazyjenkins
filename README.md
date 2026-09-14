@@ -19,10 +19,10 @@ The release binaries bundle `jk`, so there's nothing else to install.
 ## Installation
 
 See **[INSTALL.md](INSTALL.md)** for Linux instructions (prebuilt binary,
-build-from-source via the `Makefile`, and Homebrew), first-run setup, key
+build-from-source via the `Makefile`, Nix, and Homebrew), first-run setup, key
 bindings, and troubleshooting.
 
-Quick start:
+Quick start (standard):
 
 ```bash
 ARCH=$(uname -m); case "$ARCH" in x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; esac
@@ -31,6 +31,16 @@ sudo install -m 0755 lazyjenkins /usr/local/bin/
 
 lazyjenkins auth login https://jenkins.example.com --token "$JENKINS_TOKEN"
 lazyjenkins
+```
+
+Quick start (Nix):
+
+```bash
+# Run lazyjenkins directly without installing
+nix run github:rgsoda/lazyjenkins
+
+# Or run the underlying jk CLI dependency directly
+nix run github:rgsoda/lazyjenkins#jk -- --help
 ```
 
 ## Key bindings
@@ -62,6 +72,14 @@ make run            # build and launch
 ```
 
 `make help` lists all targets.
+
+### Nix
+
+If you use Nix, you can enter a fully loaded development shell containing Go, Gnumake, `golangci-lint`, and `jk`:
+
+```bash
+nix develop
+```
 
 ## License
 
